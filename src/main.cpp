@@ -6,7 +6,7 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-#include <DHT.h>
+#include <Adafruit_BMP085.h>
 
 // ================= PINOS =================
 #define LED_BUILTIN 2
@@ -26,12 +26,10 @@
 // Reles
 #define Rele_Ele_Ima 4
 #define Rele_ArCondi 13
+#define Rele_Energia 12
 
-// DHT
-#define DHTPIN 15
-#define DHTTYPE DHT11
-
-DHT dht(DHTPIN, DHTTYPE);
+// Button
+#define Button 26
 
 // ================= OBJETOS =================
 SPIClass spi(VSPI);
@@ -47,12 +45,17 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 // ================= VARIÁVEIS =================
 String read_rfid;
 
+Adafruit_BMP085 bmp;
+
 String ok_rfid_1 = "c4666a31";
 String ok_rfid_2 = "eaddd70";
 
 bool acesso_liberado = false;
 unsigned long tempo_aberto = 0;
 const unsigned long TEMPO_PORTA_ABERTA = 10000; // 10s
+unsigned long tempo_temp = 0;
+const unsigned long INTERVALO_TEMP = 2000; // 2s
+bool estadoEnergiaAnterior = false;
 
 // ================= FUNÇÕES =================
 
@@ -74,8 +77,7 @@ void mostrar_fechado()
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Quarto fechado");
-  lcd.setCursor(0,1);
-  lcd.print(dht.readTemperature());
+  lcd.setCursor(0, 1);
 }
 
 // LCD - erro
@@ -83,8 +85,6 @@ void mostrar_erro()
 {
   lcd.setCursor(0, 1);
   lcd.print("Cartao errado ");
-  lcd.setCursor(0,1);
-  lcd.print(dht.readTemperature());
 }
 
 // LCD - acesso liberado
@@ -131,37 +131,65 @@ void leitura_rfid(MFRC522 &dev, const char *label)
 }
 
 // Medir temperatura e umidade
-void ler_dht()
+void ler_temperatura()
 {
-  float temperatura = dht.readTemperature();
-  float umidade = dht.readHumidity();
-
-  if (isnan(temperatura) || isnan(umidade))
-  {
-    Serial.println("Erro ao ler DHT");
-    return;
-  }
+  float temperatura = bmp.readTemperature();
 
   Serial.print("Temp: ");
   Serial.print(temperatura);
-  Serial.print(" °C | Umidade: ");
-  Serial.print(umidade);
-  Serial.println(" %");
-  if(temperatura <= 25){
+  Serial.println(" C");
+
+  // Controle do ar condicionado
+  if (temperatura <= 21)
+  {
+    Serial.println("Ar Ligado");
     digitalWrite(Rele_ArCondi, HIGH);
-  } else{
-    digitalWrite(Rele_ArCondi,LOW);
+  }
+  else
+  {
+    Serial.println("Ar Desligado");
+    digitalWrite(Rele_ArCondi, LOW);
+  }
+}
+
+// Liberação de energia
+void energia()
+{
+  bool estadoAtual = digitalRead(Button);
+
+  // detecta mudança
+  if (estadoAtual != estadoEnergiaAnterior)
+  {
+    estadoEnergiaAnterior = estadoAtual;
+
+    if (estadoAtual == HIGH)
+    {
+      Serial.println("Energia Ligada");
+      digitalWrite(Rele_Energia, HIGH);
+    }
+    else
+    {
+      Serial.println("Energia Desligada");
+      digitalWrite(Rele_Energia, LOW);
+    }
   }
 }
 
 // ================= SETUP =================
 void setup()
 {
-  dht.begin();
+  bmp.begin();
   Serial.begin(115200);
 
   // I2C
   Wire.begin(SDA_PIN, SCL_PIN);
+
+  if (!bmp.begin())
+  {
+    Serial.println("BMP180 nao encontrado!");
+    while (1)
+      ;
+  }
 
   lcd.init();
   lcd.backlight();
@@ -175,10 +203,14 @@ void setup()
   // Rele
   pinMode(Rele_Ele_Ima, OUTPUT);
   pinMode(Rele_ArCondi, OUTPUT);
+  pinMode(Rele_Energia, OUTPUT);
 
   // RFID
   pinMode(RST_A, OUTPUT);
   digitalWrite(RST_A, HIGH);
+
+  // Button
+  pinMode(Button, INPUT);
 
   spi.begin(SCK_PIN, MISO_PIN, MOSI_PIN);
   mfrcA.PCD_Init();
@@ -201,6 +233,11 @@ void loop()
     digitalWrite(Rele_Ele_Ima, LOW);
     mostrar_fechado();
   }
-  ler_dht();
-  delay(2000);
+  if (millis() - tempo_temp >= INTERVALO_TEMP)
+  {
+    tempo_temp = millis();
+    ler_temperatura();
+  }
+
+  energia();
 }
