@@ -6,6 +6,16 @@
 #include <Adafruit_BMP085.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include "EmonLib.h"
+
+// ================= PROTÓTIPOS =================
+void tela_erro();
+void tela_aberto();
+void tela_fechado();
+void ler_temperatura();
+void energia();
+void ler_corrente();
+void leitura_rfid(MFRC522 &dev);
 
 // ================= PINOS =================
 #define LED_BUILTIN 2
@@ -38,11 +48,8 @@
 float correnteRMS = 0;
 float potenciaAparente = 0;
 
-// ajuste fino depois (calibração)
-const float fatorCalibracao = 0.050;
-
 unsigned long tempo_corrente = 0;
-const unsigned long INTERVALO_CORRENTE = 1000; // 1s
+const unsigned long INTERVALO_CORRENTE = 1000;
 
 const float tensaoRede = 127.0;
 
@@ -62,6 +69,9 @@ Adafruit_SSD1306 display(128, 64, &spiOLED, OLED_DC, OLED_RST, OLED_CS);
 
 // Sensor
 Adafruit_BMP085 bmp;
+
+// ===== EmonLib =====
+EnergyMonitor SCT013;
 
 // ================= VARIÁVEIS =================
 String read_rfid;
@@ -203,29 +213,15 @@ void energia()
   }
 }
 
+// ===== CORRENTE (EmonLib) =====
+
 void ler_corrente()
 {
-  int amostras = 500;
-  float soma = 0;
+  double Irms = SCT013.calcIrms(1480);
 
-  for (int i = 0; i < amostras; i++)
-  {
-    int leitura = analogRead(PINO_SCT);
+  correnteRMS = Irms;
+  potenciaAparente = Irms * tensaoRede;
 
-    // Remove offset do ADC (ESP32 ~2048)
-    float valor = leitura - 2048;
-
-    soma += valor * valor;
-  }
-
-  float media = soma / amostras;
-
-  correnteRMS = sqrt(media) * fatorCalibracao;
-
-  // Potência aparente (S = V * I)
-  potenciaAparente = tensaoRede * correnteRMS;
-
-  // Serial
   Serial.print("Corrente RMS: ");
   Serial.print(correnteRMS);
   Serial.println(" A");
@@ -241,41 +237,35 @@ void setup()
 {
   Serial.begin(115200);
 
-  // RFID SPI
   spiRFID.begin(SCK_PIN, MISO_PIN, MOSI_PIN);
-
-  // OLED SPI (separado)
   spiOLED.begin(OLED_CLK, -1, OLED_MOSI);
 
-  // OLED
   if (!display.begin(SSD1306_SWITCHCAPVCC))
   {
     Serial.println("Erro OLED");
-    while (1)
-      ;
+    while (1);
   }
 
   display.setTextColor(WHITE);
 
-  // BMP180
   if (!bmp.begin())
   {
     Serial.println("BMP180 nao encontrado!");
-    while (1)
-      ;
+    while (1);
   }
 
-  // Pinos
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(Rele_Ele_Ima, OUTPUT);
   pinMode(Rele_ArCondi, OUTPUT);
   pinMode(Rele_Energia, OUTPUT);
   pinMode(Button, INPUT);
 
-  // RFID
   pinMode(RST_A, OUTPUT);
   digitalWrite(RST_A, HIGH);
   mfrcA.PCD_Init();
+
+  // ===== INICIALIZA SENSOR DE CORRENTE =====
+  SCT013.current(PINO_SCT, 1.0);
 
   Serial.println("Sistema pronto");
 }
