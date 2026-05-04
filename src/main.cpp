@@ -41,6 +41,7 @@ void leitura_rfid(MFRC522 &dev);
 
 // Botão
 #define Button 26
+#define ButtonPorta 27
 
 // ===== SENSOR DE CORRENTE =====
 #define PINO_SCT 34
@@ -163,7 +164,7 @@ void leitura_rfid(MFRC522 &dev)
   Serial.print("\nUID: ");
   Serial.println(read_rfid);
 
-  if (read_rfid == ok_rfid_1 || read_rfid == ok_rfid_2)
+  if (read_rfid == ok_rfid_1 || read_rfid == ok_rfid_2 || digitalRead(ButtonPorta) == HIGH)
   {
     acesso_liberado = true;
     tempo_aberto = millis();
@@ -259,6 +260,7 @@ void setup()
   pinMode(Rele_ArCondi, OUTPUT);
   pinMode(Rele_Energia, OUTPUT);
   pinMode(Button, INPUT);
+  pinMode(ButtonPorta, INPUT);
 
   pinMode(RST_A, OUTPUT);
   digitalWrite(RST_A, HIGH);
